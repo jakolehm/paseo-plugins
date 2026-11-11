@@ -1,0 +1,14 @@
+{
+  "id": "port-forward",
+  "name": "Port forward",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.14.0"
+  },
+  "build": [
+    [
+      "npm",
+      "ci"
+    ]
+  ]
+}
