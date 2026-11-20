@@ -22,11 +22,19 @@ interface PollState {
   error: string | null;
 }
 
+export interface HeldPullRequest {
+  pr: PullRequest;
+  reason: string;
+}
+
+export const MANUAL_REASON = "requested manually";
+
 // Polls GitHub without an agent, and starts an agent only for a PR that needs a review.
 export class Watcher {
   private settings: ReviewSettings = reviewSettings.schema.parse({});
   private readonly open = new Map<string, PullRequest[]>();
   private readonly polls = new Map<string, PollState>();
+  private readonly held = new Map<string, HeldPullRequest[]>();
   private checkouts = new Map<string, string>();
   private readonly currentNames = new Map<string, string>();
   private timer: NodeJS.Timeout | null = null;
@@ -70,7 +78,8 @@ export class Watcher {
     if (this.runner.isActive(key)) throw new Error(`A review of ${key} is already in progress`);
     const handled = this.store.handled(key);
     const since = handled && handled.head !== pr.head ? handled.head : null;
-    this.runner.enqueue(pr, "requested manually", since, reviewer, checkout);
+    this.runner.enqueue(pr, MANUAL_REASON, since, reviewer, checkout);
+    for (const [id, held] of this.held) this.held.set(id, held.filter((entry) => prKey(entry.pr.repo, entry.pr.number) !== key));
   }
 
   scheduledCheck() {
@@ -89,9 +98,18 @@ export class Watcher {
     return this.open.get(repo.toLowerCase())?.find((pr) => prKey(pr.repo, pr.number) === key);
   }
 
+  heldPullRequests() {
+    const enabled = new Set(this.settings.reviewers.filter((reviewer) => reviewer.enabled).map((reviewer) => reviewer.id));
+    return [...this.held].filter(([reviewerId]) => enabled.has(reviewerId)).flatMap(([, held]) => held);
+  }
+
   isOpen(repo: string, key: string) {
     const polled = this.open.get(repo.toLowerCase());
     return !polled || polled.some((pr) => prKey(pr.repo, pr.number) === key);
+  }
+
+  isWatched(repo: string) {
+    return this.reviewerFor(repo) !== undefined;
   }
 
   isCovered(repo: string) {
@@ -220,6 +238,7 @@ export class Watcher {
       skipped: tally.skippedReasons(),
       error: errors.join(". ") || null,
     });
+    this.held.set(reviewer.id, tally.held);
   }
 
   // A review agent that failed is not started again on the same commit until the user dismisses the failure.
@@ -255,7 +274,7 @@ export class Watcher {
       }
       const decision = decide(pr, me, reviewer, this.store.handled(key), now);
       if (decision.review && hold) {
-        tally.skip("held back by usage limits");
+        tally.hold(pr, hold);
       } else if (decision.review) {
         this.runner.enqueue(pr, decision.reason, decision.since, reviewer, checkout);
         tally.start();
@@ -270,6 +289,7 @@ class PollTally {
   private checked = 0;
   private started = 0;
   private readonly skipped = new Map<string, number>();
+  readonly held: HeldPullRequest[] = [];
 
   start() {
     this.checked++;
@@ -279,6 +299,11 @@ class PollTally {
   skip(reason: string) {
     this.checked++;
     this.skipped.set(reason, (this.skipped.get(reason) ?? 0) + 1);
+  }
+
+  hold(pr: PullRequest, reason: string) {
+    this.skip("held back by usage limits");
+    this.held.push({ pr, reason });
   }
 
   result() {

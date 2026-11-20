@@ -3,7 +3,7 @@ import { type Attention, authorActions } from "./attention";
 import { prStatus } from "./pr-status";
 import { prKey, type PullRequest } from "./pull-request";
 import type { ReviewRecord, ReviewStore } from "./review-store";
-import type { Watcher } from "./watcher";
+import { MANUAL_REASON, type Watcher } from "./watcher";
 
 const RECENT_MS = 24 * 60 * 60_000;
 const STALE_REQUEST_MS = 30 * RECENT_MS;
@@ -11,8 +11,8 @@ const EVENT_LABELS = { APPROVE: "Approved", COMMENT: "Commented", NONE: "No revi
 
 export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: Attention): Dashboard {
   const { snapshot, error } = attention.current();
-  const latest = latestPerPullRequest(store.records().filter((record) => !isSuperseded(record, store))).filter((record) =>
-    watcher.isOpen(record.repo, record.key),
+  const latest = latestPerPullRequest(store.records().filter((record) => !isSuperseded(record, store))).filter(
+    (record) => watcher.isOpen(record.repo, record.key) && (record.reason === MANUAL_REASON || watcher.isWatched(record.repo)),
   );
 
   const now = Date.now();
@@ -48,6 +48,13 @@ export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: 
     }
     return [];
   });
+  const shown = new Set(inProgress.map((row) => prKey(row.repo, row.number)));
+  for (const { pr, reason } of watcher.heldPullRequests()) {
+    const key = prKey(pr.repo, pr.number);
+    if (shown.has(key)) continue;
+    shown.add(key);
+    inProgress.push(githubRow(pr, "held", `Waits for usage limits: ${reason}`, pr.updatedAt, watcher));
+  }
 
   const waitingOnOthers = latest
     .filter((record) => record.status === "done" && record.outcome && !record.outcome.needsHuman && record.outcome.findings > 0)
