@@ -5,6 +5,7 @@ Plugins for [Paseo](https://paseo.sh).
 | Plugin | Description |
 | --- | --- |
 | [port-forward](port-forward) | Open ports from remote Paseo hosts on your own machine. |
+| [pr-reviews](pr-reviews) | Run review agents on GitHub PRs and see what waits on you. |
 
 ## Install
 

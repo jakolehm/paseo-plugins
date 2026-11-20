@@ -1,0 +1,14 @@
+{
+  "id": "pr-reviews",
+  "name": "PR reviews",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.14.0"
+  },
+  "build": [
+    [
+      "npm",
+      "ci"
+    ]
+  ]
+}
