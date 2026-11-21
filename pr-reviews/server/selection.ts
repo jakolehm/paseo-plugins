@@ -36,7 +36,6 @@ export function decide(
   }
   if (pr.isDraft) return skip("draft");
   if (rules.maxAgeDays > 0 && now - Date.parse(pr.createdAt) > rules.maxAgeDays * DAY_MS) return skip("too old");
-  if (pr.reviewDecision === "APPROVED") return skip("already approved");
   if (now - Date.parse(pr.updatedAt) < QUIET_MS) return skip("recently updated");
 
   const myReviews = pr.reviews.filter((review) => review.author === me);

@@ -36,8 +36,8 @@ function pr(changes: Partial<PullRequest> = {}): PullRequest {
 
 const myReview = { author: ME, isBot: false, at: "2026-11-19T10:00:00Z", commit: "aaa" };
 
-test("skips my own, skipped author, draft, and approved PRs", () => {
-  for (const changes of [{ author: ME }, { author: "dependabot[bot]" }, { isDraft: true }, { reviewDecision: "APPROVED" }]) {
+test("skips my own, skipped author, and draft PRs", () => {
+  for (const changes of [{ author: ME }, { author: "dependabot[bot]" }, { isDraft: true }]) {
     assert.equal(decide(pr(changes), ME, ALL_OPEN, undefined, NOW).review, false);
   }
 });
@@ -56,6 +56,16 @@ test("reviews a new PR only when the policy allows it", () => {
 test("re-reviews from my last reviewed commit after new commits", () => {
   const decision = decide(pr({ reviews: [myReview] }), ME, REQUESTED, undefined, NOW);
   assert.deepEqual(decision, { review: true, reason: "new commits", since: "aaa" });
+});
+
+test("reviews an approved PR that I did not review yet", () => {
+  assert.equal(decide(pr({ reviewDecision: "APPROVED" }), ME, ALL_OPEN, undefined, NOW).review, true);
+});
+
+test("re-reviews an approved PR that changed after my last review", () => {
+  const decision = decide(pr({ reviewDecision: "APPROVED", reviews: [myReview] }), ME, ALL_OPEN, undefined, NOW);
+  assert.deepEqual(decision, { review: true, reason: "new commits", since: "aaa" });
+  assert.equal(decide(pr({ reviewDecision: "APPROVED", head: "aaa", reviews: [myReview] }), ME, ALL_OPEN, undefined, NOW).review, false);
 });
 
 test("does not re-review when nothing changed", () => {

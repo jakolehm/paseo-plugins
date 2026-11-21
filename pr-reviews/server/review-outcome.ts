@@ -13,7 +13,18 @@ export const reviewOutcomeJsonSchema = z.toJSONSchema(reviewOutcomeSchema) as Re
 
 export function parseOutcome(message: string | null): ReviewOutcome | null {
   if (!message) return null;
-  const json = message.slice(message.lastIndexOf("{"), message.lastIndexOf("}") + 1);
+  const end = message.lastIndexOf("}") + 1;
+  // The reason can contain braces, so try each opening brace from the end.
+  for (let start = end - 1; start > 0; ) {
+    start = message.lastIndexOf("{", start - 1);
+    if (start < 0) break;
+    const outcome = tryParse(message.slice(start, end));
+    if (outcome) return outcome;
+  }
+  return null;
+}
+
+function tryParse(json: string) {
   try {
     return reviewOutcomeSchema.parse(JSON.parse(json));
   } catch {

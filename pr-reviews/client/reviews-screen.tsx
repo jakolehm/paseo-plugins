@@ -80,7 +80,7 @@ export function ReviewsScreen({ theme, layout, navigation }: PluginScreenProps) 
             <ActionNeeded groups={dashboard.actionNeeded} />
             <PrSection title="In progress" rows={dashboard.inProgress} />
             <PrSection title="Waiting on others" rows={dashboard.waitingOnOthers} />
-            <PrSection title="Done in the last 24 hours" rows={dashboard.recentlyDone} />
+            <PrSection title="Reviewed in the last 24 hours" rows={dashboard.recentlyDone} />
             {!twoColumns && <Reviewers reviewers={dashboard.reviewers} manager={manager} />}
           </View>
         </View>

@@ -15,3 +15,8 @@ test("reads the JSON block after a summary that has braces", () => {
 test("returns null without a result", () => {
   assert.equal(parseOutcome("I could not finish."), null);
 });
+
+test("reads a result whose reason has braces", () => {
+  const message = '```json\n{"event": "APPROVE", "findings": 0, "needsHuman": false, "reason": "the links open /u/{name}"}\n```';
+  assert.deepEqual(parseOutcome(message), { event: "APPROVE", findings: 0, needsHuman: false, reason: "the links open /u/{name}" });
+});

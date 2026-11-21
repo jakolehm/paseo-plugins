@@ -39,12 +39,16 @@ export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: 
     .sort((a, b) => a.rank - b.rank || byTime(a.row, b.row))
     .map(({ row }) => row);
 
+  const held = new Set(watcher.heldPullRequests().map(({ pr }) => prKey(pr.repo, pr.number)));
   const inProgress = latest.flatMap((record) => {
     if (record.status === "queued" || record.status === "running") {
       return [recordRow(record, `${record.status === "queued" ? "Queued" : "Reviewing"}: ${record.reason}`)];
     }
     if (record.status === "failed" && !record.agentId) {
       return [recordRow(record, `Waits for retry: ${firstPart(record.error)}`)];
+    }
+    if (record.status === "done" && !record.outcome?.needsHuman && !held.has(record.key) && hasNewCommits(record, watcher)) {
+      return [recordRow(record, `New commits since the review of ${record.head.slice(0, 7)}.`)];
     }
     return [];
   });
@@ -56,9 +60,14 @@ export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: 
     inProgress.push(githubRow(pr, "held", `Waits for usage limits: ${reason}`, pr.updatedAt, watcher));
   }
 
+  // A comment with no new findings still waits for the author, for example on a thread that stays open.
   const waitingOnOthers = latest
-    .filter((record) => record.status === "done" && record.outcome && !record.outcome.needsHuman && record.outcome.findings > 0)
-    .map((record) => recordRow(record, `${findings(record)}, waiting for the author`));
+    .filter((record) => record.status === "done" && record.outcome && !record.outcome.needsHuman)
+    .filter((record) => !isApproved(record, watcher) && !hasNewCommits(record, watcher))
+    .filter((record) => record.outcome!.findings > 0 || record.outcome!.event === "COMMENT")
+    .map((record) =>
+      recordRow(record, record.outcome!.findings > 0 ? `${findings(record)}, waiting for the author` : `Waiting for the author: ${record.outcome!.reason}`),
+    );
 
   const needsAction = new Set([...agents, ...reviews].map((row) => prKey(row.repo, row.number)));
   const recentlyDone = store
@@ -153,6 +162,17 @@ function githubRow(pr: PullRequest, kind: string, reason: string, at: string, wa
 // Paseo puts the full gh command with its query in some errors. The first part is enough.
 function firstPart(error: string | null) {
   return (error ?? "unknown error").split(/:\s*gh |\n/)[0];
+}
+
+// An approved PR with no new commits waits on nobody.
+function isApproved(record: ReviewRecord, watcher: Watcher) {
+  return watcher.openPullRequest(record.repo, record.key)?.reviewDecision === "APPROVED";
+}
+
+// The author can push while the agent reviews an older commit. A draft is not reviewed until it is ready.
+function hasNewCommits(record: ReviewRecord, watcher: Watcher) {
+  const pr = watcher.openPullRequest(record.repo, record.key);
+  return pr !== undefined && !pr.isDraft && pr.head !== record.head;
 }
 
 function findings(record: ReviewRecord) {
