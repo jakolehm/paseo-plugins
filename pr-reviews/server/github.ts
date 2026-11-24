@@ -99,6 +99,20 @@ export class GitHub {
     };
   }
 
+  // One PR with its reviews and comments, for a review that starts now. Null when it is not open.
+  async openPullRequest(repo: string, number: number): Promise<PullRequest | null> {
+    const [owner, name] = repo.split("/");
+    const data = await this.graphql(`query {
+      repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) {
+        pullRequest(number: ${Number(number)}) { state ${LIST_FIELDS} ${ACTIVITY_FIELDS} }
+      }
+    }`);
+    const node = data.repository?.pullRequest;
+    if (node?.state !== "OPEN") return null;
+    this.activities.set(nodeKey(node), { updatedAt: node.updatedAt, activities: toActivities(node) });
+    return this.toPullRequest(node);
+  }
+
   private async repoPage(repo: string): Promise<ListPage> {
     const [owner, name] = repo.split("/");
     const data = await this.graphql(`query {

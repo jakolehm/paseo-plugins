@@ -84,9 +84,10 @@ export function ReviewNowDialog({ theme, reviewers, target, onStarted, onClose }
           <Button theme={theme} label="Cancel" onPress={onClose} />
           <Button
             theme={theme}
-            label="Start review"
+            label={starting ? "Starting…" : "Start review"}
             variant="primary"
-            disabled={!ref || !reviewerId || starting}
+            busy={starting}
+            disabled={!ref || !reviewerId}
             onPress={() => void start()}
           />
         </View>

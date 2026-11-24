@@ -7,6 +7,7 @@ import { prKey, type PullRequest } from "./pull-request";
 import { parseOutcome, reviewOutcomeJsonSchema } from "./review-outcome";
 import { followUpPrompt, reviewPrompt, systemPrompt } from "./review-prompt";
 import type { ReviewRecord, ReviewStore } from "./review-store";
+import { ZEROSUB_ACCOUNT_KEY } from "./zerosub";
 
 const WAIT_STEP_MS = 10 * 60_000;
 const AGENT_DEADLINE_MS = 4 * 60 * 60_000;
@@ -47,7 +48,8 @@ export class ReviewRunner {
     return this.store.records().some((record) => record.key === key && ACTIVE.has(record.status));
   }
 
-  enqueue(pr: PullRequest, reason: string, since: string | null, reviewer: Reviewer, checkout: string) {
+  // The account is a ZeroSub account with room for a new agent, or null to let ZeroSub or the CLI login decide.
+  enqueue(pr: PullRequest, reason: string, since: string | null, reviewer: Reviewer, checkout: string, account: string | null) {
     const record: ReviewRecord = {
       id: randomUUID(),
       key: prKey(pr.repo, pr.number),
@@ -68,6 +70,7 @@ export class ReviewRunner {
       outcome: null,
       error: null,
       agentConfig: agentConfig(reviewer),
+      account,
     };
     this.store.add(record);
     this.pending.push({ recordId: record.id, reviewer, checkout });
@@ -202,6 +205,7 @@ export class ReviewRunner {
         prompt: reviewPrompt(record),
         outputSchema: reviewOutcomeJsonSchema,
         labels: { "pr-reviews": reviewer.id },
+        ...(record.account ? { metadata: { [ZEROSUB_ACCOUNT_KEY]: record.account } } : {}),
       });
       const previous = this.checkoutQueues.get(checkout) ?? Promise.resolve();
       const created = previous.catch(() => undefined).then(create);
@@ -276,7 +280,10 @@ export class ReviewRunner {
         if (result.status === "error") return this.fail(recordId, result.error ?? "The agent failed");
         const outcome = parseOutcome(result.lastMessage);
         if (!outcome) return this.fail(recordId, "The agent did not return a review result");
-        return this.store.update(recordId, { status: "done", outcome, finishedAt: new Date().toISOString() });
+        // The tokens are extra data. A failed read must not fail a finished review.
+        const snapshot = await agent.refresh().catch(() => null);
+        const tokens = tokenCount(snapshot?.agent?.lastUsage);
+        return this.store.update(recordId, { status: "done", outcome, tokens, finishedAt: new Date().toISOString() });
       }
       if (!this.disposed) this.fail(recordId, "The agent did not finish in 4 hours");
     } catch (error) {
@@ -321,4 +328,10 @@ async function agentModel(paseo: PaseoApi, reviewer: Reviewer) {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// The tokens of the last turn, which is this review. Paseo does not count the tokens written to the cache.
+function tokenCount(usage: { inputTokens?: number; cachedInputTokens?: number; outputTokens?: number } | undefined) {
+  if (!usage) return null;
+  return (usage.inputTokens ?? 0) + (usage.cachedInputTokens ?? 0) + (usage.outputTokens ?? 0);
 }

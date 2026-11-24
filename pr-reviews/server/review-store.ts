@@ -31,6 +31,8 @@ export interface ReviewRecord {
   restoredAt?: string;
   agentConfig?: string;
   round?: number;
+  tokens?: number | null;
+  account?: string | null;
 }
 
 interface State {

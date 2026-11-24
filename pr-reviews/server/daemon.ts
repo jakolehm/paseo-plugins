@@ -15,6 +15,10 @@ export class Daemon {
     return (await this.connect()).api;
   }
 
+  async invokePluginRpc(pluginId: string, method: string, input: unknown) {
+    return (await this.connect()).client.invokePluginRpc(pluginId, method, input);
+  }
+
   async cancelAgent(agentId: string) {
     await (await this.connect()).client.cancelAgent(agentId);
   }

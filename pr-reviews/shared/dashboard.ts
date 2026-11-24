@@ -47,6 +47,7 @@ const dashboardSchema = z.object({
   syncedAt: z.string().nullable(),
   error: z.string().nullable(),
   usageHold: z.string().nullable(),
+  reviewAccounts: z.array(z.string()),
   nextCheck: z.object({ from: z.string(), at: z.string() }).nullable(),
   actionNeeded: z.object({
     agents: z.array(prRowSchema),
@@ -56,6 +57,15 @@ const dashboardSchema = z.object({
   inProgress: z.array(prRowSchema),
   waitingOnOthers: z.array(prRowSchema),
   recentlyDone: z.array(prRowSchema),
+  recentStats: z.object({
+    reviews: z.number().int(),
+    pullRequests: z.number().int(),
+    approved: z.number().int(),
+    findings: z.number().int(),
+    tokens: z.number().int(),
+    hourly: z.array(z.number().int()),
+    hourlyTokens: z.array(z.number().int()),
+  }),
   reviewers: z.array(reviewerStatusSchema),
 });
 

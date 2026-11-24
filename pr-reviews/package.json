@@ -26,6 +26,6 @@
     "zod": "^4.4.3"
   },
   "dependencies": {
-    "@getpaseo/client": "0.14.0"
+    "@getpaseo/client": "0.16.2"
   }
 }

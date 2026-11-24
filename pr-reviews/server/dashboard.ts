@@ -1,6 +1,8 @@
 import type { Dashboard, PrRow } from "../shared/dashboard";
 import { type Attention, authorActions } from "./attention";
+import { formatTokens } from "../shared/tokens";
 import { prStatus } from "./pr-status";
+import { reviewStats } from "./review-stats";
 import { prKey, type PullRequest } from "./pull-request";
 import type { ReviewRecord, ReviewStore } from "./review-store";
 import { MANUAL_REASON, type Watcher } from "./watcher";
@@ -70,11 +72,12 @@ export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: 
     );
 
   const needsAction = new Set([...agents, ...reviews].map((row) => prKey(row.repo, row.number)));
-  const recentlyDone = store
+  const recent = store
     .records()
-    .filter((record) => record.status === "done" && record.finishedAt && now - Date.parse(record.finishedAt) < RECENT_MS)
+    .filter((record) => record.status === "done" && record.finishedAt && now - Date.parse(record.finishedAt) < RECENT_MS);
+  const recentlyDone = recent
     .filter((record) => !needsAction.has(prKey(record.repo, record.number)))
-    .map((record) => recordRow(record, `${EVENT_LABELS[record.outcome!.event]} · ${findings(record)} · ${record.outcome!.reason}`));
+    .map((record) => recordRow(record, [EVENT_LABELS[record.outcome!.event], findings(record), tokens(record), record.outcome!.reason].filter(Boolean).join(" · ")));
 
   const known = new Map(
     [...(snapshot?.reviewRequested ?? []), ...(snapshot?.authored ?? [])].map((pr) => [prKey(pr.repo, pr.number), pr]),
@@ -91,6 +94,7 @@ export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: 
     syncedAt: snapshot?.syncedAt ?? null,
     error,
     usageHold: watcher.usageHold(),
+    reviewAccounts: watcher.reviewAccounts(),
     nextCheck: watcher.scheduledCheck(),
     actionNeeded: {
       agents: withStatus(agents),
@@ -100,6 +104,7 @@ export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: 
     inProgress: withStatus(inProgress),
     waitingOnOthers: withStatus(waitingOnOthers),
     recentlyDone: withStatus(recentlyDone),
+    recentStats: reviewStats(recent, now),
     reviewers: watcher.status(),
   };
 }
@@ -182,4 +187,8 @@ function findings(record: ReviewRecord) {
 
 function byTime(a: PrRow, b: PrRow) {
   return Date.parse(a.at) - Date.parse(b.at);
+}
+
+function tokens(record: ReviewRecord) {
+  return record.tokens ? `${formatTokens(record.tokens)} tokens` : null;
 }

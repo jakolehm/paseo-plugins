@@ -67,23 +67,30 @@ export class Watcher {
   async reviewNow(repo: string, number: number, reviewerId: string) {
     const reviewer = this.settings.reviewers.find((candidate) => candidate.id === reviewerId);
     if (!reviewer) throw new Error("The reviewer does not exist");
-    await this.refreshCheckouts();
+    if (!this.checkouts.has(repo.toLowerCase())) await this.refreshCheckouts();
     const checkout = this.checkouts.get(repo.toLowerCase());
     if (!checkout) throw new Error(`${repo} is not a Paseo project on this host`);
-    const [pullRequests] = (await this.github.snapshot([await this.currentName(repo)], [])).repos.values();
-    if (pullRequests instanceof Error) throw pullRequests;
-    const pr = pullRequests.find((candidate) => candidate.number === number);
+    const pr = await this.github.openPullRequest(await this.currentName(repo), number);
     if (!pr) throw new Error(`${repo}#${number} is not an open PR`);
     const key = prKey(pr.repo, pr.number);
     if (this.runner.isActive(key)) throw new Error(`A review of ${key} is already in progress`);
     const handled = this.store.handled(key);
     const since = handled && handled.head !== pr.head ? handled.head : null;
-    this.runner.enqueue(pr, MANUAL_REASON, since, reviewer, checkout);
+    this.runner.enqueue(pr, MANUAL_REASON, since, reviewer, checkout, this.usage.account(reviewer.provider, this.settings));
     for (const [id, held] of this.held) this.held.set(id, held.filter((entry) => prKey(entry.pr.repo, entry.pr.number) !== key));
   }
 
   scheduledCheck() {
     return this.nextCheck;
+  }
+
+  // The ZeroSub accounts that new reviews start on.
+  reviewAccounts() {
+    const providers = new Set(this.settings.reviewers.filter((reviewer) => reviewer.enabled).map((reviewer) => reviewer.provider));
+    return [...providers].flatMap((provider) => {
+      const account = this.usage.account(provider, this.settings);
+      return account ? [this.usage.accountLabel(account)] : [];
+    });
   }
 
   usageHold() {
@@ -276,7 +283,7 @@ export class Watcher {
       if (decision.review && hold) {
         tally.hold(pr, hold);
       } else if (decision.review) {
-        this.runner.enqueue(pr, decision.reason, decision.since, reviewer, checkout);
+        this.runner.enqueue(pr, decision.reason, decision.since, reviewer, checkout, this.usage.account(reviewer.provider, this.settings));
         tally.start();
       } else {
         tally.skip(decision.reason);

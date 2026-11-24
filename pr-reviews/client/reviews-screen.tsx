@@ -5,6 +5,7 @@ import { Icon, Loading, ScrollView, SettingsCard, SettingsRow, SettingsSection }
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { formatTokens } from "../shared/tokens";
 import { checkNowRpc, dismissRpc, restoreAgentRpc, type Dashboard, type PrRow, type ReviewerStatus } from "../shared/dashboard";
 import { Button } from "./button";
 import { NextCheck } from "./next-check";
@@ -70,10 +71,12 @@ export function ReviewsScreen({ theme, layout, navigation }: PluginScreenProps) 
             <AutomationStatus
               reviewers={dashboard.reviewers}
               usageHold={dashboard.usageHold}
+              reviewAccounts={dashboard.reviewAccounts}
               syncedAt={dashboard.syncedAt}
               nextCheck={dashboard.nextCheck}
             />
             {dashboard.error && <Text style={value.styles.error}>GitHub sync failed: {dashboard.error}</Text>}
+            <RecentStats stats={dashboard.recentStats} />
             {twoColumns && <Reviewers reviewers={dashboard.reviewers} manager={manager} />}
           </View>
           <View style={value.styles.main}>
@@ -102,11 +105,13 @@ export function ReviewsScreen({ theme, layout, navigation }: PluginScreenProps) 
 function AutomationStatus({
   reviewers,
   usageHold,
+  reviewAccounts,
   syncedAt,
   nextCheck,
 }: {
   reviewers: ReviewerStatus[];
   usageHold: string | null;
+  reviewAccounts: string[];
   syncedAt: string | null;
   nextCheck: Dashboard["nextCheck"];
 }) {
@@ -130,6 +135,9 @@ function AutomationStatus({
       <View style={styles.statusBody}>
         <Text style={styles.statusText}>{headline}</Text>
         {active.length > 0 && nextCheck && <NextCheck theme={theme} from={nextCheck.from} at={nextCheck.at} />}
+        {active.length > 0 && reviewAccounts.length > 0 && (
+          <Text style={styles.statusHint}>New reviews use {reviewAccounts.join(", ")} (ZeroSub).</Text>
+        )}
         <Text style={styles.statusHint}>{syncedAt ? `GitHub synced ${age(syncedAt)} ago.` : "GitHub not synced yet."}</Text>
       </View>
       <IconButton icon="RefreshCw" label="Check GitHub now" onPress={() => checkNow.mutate({})} />
@@ -156,7 +164,79 @@ function ActionNeeded({ groups }: { groups: Dashboard["actionNeeded"] }) {
   );
 }
 
-function PrSection({ title, rows, empty, highlight = false }: { title: string; rows: PrRow[]; empty?: string; highlight?: boolean }) {
+function count(value: number, noun: string) {
+  return `${value} ${noun}${value === 1 ? "" : "s"}`;
+}
+
+function RecentStats({ stats }: { stats: Dashboard["recentStats"] }) {
+  const { styles } = useScreen();
+  const totals = [count(stats.reviews, "review"), count(stats.pullRequests, "PR"), `${stats.approved} approved`, count(stats.findings, "finding")];
+  return (
+    <View style={styles.stats}>
+      <Text style={styles.statusText}>Last 24 hours</Text>
+      <HourlyChart title="Reviews" summary={totals.join(" · ")} values={stats.hourly} format={(value) => count(value, "review")} />
+      <HourlyChart
+        title="Tokens"
+        summary={`${formatTokens(stats.tokens)} tokens`}
+        values={stats.hourlyTokens}
+        format={(value) => `${formatTokens(value)} tokens`}
+      />
+      <View style={styles.chartAxis}>
+        <Text style={styles.statusHint}>24 h ago</Text>
+        <Text style={styles.statusHint}>Now</Text>
+      </View>
+    </View>
+  );
+}
+
+// One bar for each hour, oldest at the left. Hovering a bar shows its hour instead of the summary.
+function HourlyChart({ title, summary, values, format }: { title: string; summary: string; values: number[]; format: (value: number) => string }) {
+  const { styles } = useScreen();
+  const [hovered, setHovered] = useState<number | null>(null);
+  const highest = Math.max(1, ...values);
+  const hoursAgo = (index: number) => values.length - 1 - index;
+  const label =
+    hovered === null ? summary : `${hoursAgo(hovered) === 0 ? "Last hour" : `${hoursAgo(hovered)} h ago`}: ${format(values[hovered])}`;
+  return (
+    <View style={styles.chartBlock}>
+      <Text style={styles.statusHint}>
+        {title}: {label}
+      </Text>
+      <View style={styles.chart} accessibilityLabel={`${title} for each hour, oldest first: ${values.map(format).join(", ")}`}>
+        {values.map((value, index) => (
+          <Pressable
+            key={index}
+            style={styles.chartSlot}
+            onHoverIn={() => setHovered(index)}
+            onHoverOut={() => setHovered(null)}
+            onPressIn={() => setHovered(index)}
+            onPressOut={() => setHovered(null)}
+          >
+            <View
+              style={[
+                value > 0 ? styles.chartBar : styles.chartEmpty,
+                value > 0 && { height: `${(value / highest) * 100}%` as const },
+                hovered === index && styles.chartHover,
+              ]}
+            />
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function PrSection({
+  title,
+  rows,
+  empty,
+  highlight = false,
+}: {
+  title: string;
+  rows: PrRow[];
+  empty?: string;
+  highlight?: boolean;
+}) {
   const { styles } = useScreen();
   if (rows.length === 0 && !empty) return null;
   return (
@@ -368,6 +448,14 @@ function createStyles(theme: PluginTheme, compact: boolean, twoColumns: boolean)
     statusBody: { flex: 1, gap: 4 },
     statusText: { color: colors.foreground, fontSize: 13 },
     statusHint: { color: colors.foregroundMuted, fontSize: 12 },
+    stats: { gap: 6, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1 },
+    chartBlock: { gap: 4, marginTop: 4 },
+    chart: { flexDirection: "row" as const, alignItems: "flex-end" as const, height: 48, gap: 2 },
+    chartSlot: { flex: 1, height: "100%" as const, justifyContent: "flex-end" as const },
+    chartBar: { backgroundColor: colors.accent, borderTopLeftRadius: 2, borderTopRightRadius: 2, minHeight: 2 },
+    chartEmpty: { backgroundColor: colors.border, height: 1 },
+    chartHover: { opacity: 0.6 },
+    chartAxis: { flexDirection: "row" as const, justifyContent: "space-between" as const },
     iconButton: { padding: 6, borderRadius: 6 },
     iconButtonPressed: { backgroundColor: colors.surface2 },
   };

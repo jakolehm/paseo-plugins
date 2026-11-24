@@ -3,7 +3,7 @@
   "name": "PR reviews",
   "media": [],
   "requirements": {
-    "paseo": ">=0.14.0"
+    "paseo": ">=0.16.0"
   },
   "build": [
     [
