@@ -1,6 +1,5 @@
 import type { Dashboard, PrRow } from "../shared/dashboard";
 import { type Attention, authorActions } from "./attention";
-import { formatTokens } from "../shared/tokens";
 import { prStatus } from "./pr-status";
 import { reviewStats } from "./review-stats";
 import { prKey, type PullRequest } from "./pull-request";
@@ -77,7 +76,7 @@ export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: 
     .filter((record) => record.status === "done" && record.finishedAt && now - Date.parse(record.finishedAt) < RECENT_MS);
   const recentlyDone = recent
     .filter((record) => !needsAction.has(prKey(record.repo, record.number)))
-    .map((record) => recordRow(record, [EVENT_LABELS[record.outcome!.event], findings(record), tokens(record), record.outcome!.reason].filter(Boolean).join(" · ")));
+    .map((record) => recordRow(record, `${EVENT_LABELS[record.outcome!.event]} · ${findings(record)} · ${record.outcome!.reason}`));
 
   const known = new Map(
     [...(snapshot?.reviewRequested ?? []), ...(snapshot?.authored ?? [])].map((pr) => [prKey(pr.repo, pr.number), pr]),
@@ -142,6 +141,7 @@ function recordRow(record: ReviewRecord, reason: string, dismissible = false): P
     at: record.finishedAt ?? record.queuedAt,
     dismissible,
     status: null,
+    tokens: record.tokens ?? null,
   };
 }
 
@@ -161,6 +161,7 @@ function githubRow(pr: PullRequest, kind: string, reason: string, at: string, wa
     at,
     dismissible: false,
     status: null,
+    tokens: null,
   };
 }
 
@@ -187,8 +188,4 @@ function findings(record: ReviewRecord) {
 
 function byTime(a: PrRow, b: PrRow) {
   return Date.parse(a.at) - Date.parse(b.at);
-}
-
-function tokens(record: ReviewRecord) {
-  return record.tokens ? `${formatTokens(record.tokens)} tokens` : null;
 }

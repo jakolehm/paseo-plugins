@@ -24,6 +24,7 @@ const prRowSchema = z.object({
   at: z.string(),
   dismissible: z.boolean(),
   status: prStatusSchema.nullable(),
+  tokens: z.number().int().nullable(),
 });
 
 export type PrRow = z.infer<typeof prRowSchema>;

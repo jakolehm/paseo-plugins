@@ -239,13 +239,14 @@ function PrSection({
 }) {
   const { styles } = useScreen();
   if (rows.length === 0 && !empty) return null;
+  const mostTokens = Math.max(0, ...rows.map((row) => row.tokens ?? 0));
   return (
     <SettingsSection title={title}>
       <View style={highlight && rows.length > 0 ? styles.highlight : undefined}>
         <SettingsCard>
           {rows.length === 0 && empty && <SettingsRow label={empty} />}
           {rows.map((row, index) => (
-            <PullRequestRow key={row.key} row={row} first={index === 0} />
+            <PullRequestRow key={row.key} row={row} first={index === 0} mostTokens={mostTokens} />
           ))}
         </SettingsCard>
       </View>
@@ -253,7 +254,7 @@ function PrSection({
   );
 }
 
-function PullRequestRow({ row, first }: { row: PrRow; first: boolean }) {
+function PullRequestRow({ row, first, mostTokens }: { row: PrRow; first: boolean; mostTokens: number }) {
   const { theme, styles, openAgent } = useScreen();
   const restore = useDashboardMutation(useRpc(restoreAgentRpc));
   const opensAgent = Boolean(row.agentId && openAgent);
@@ -277,8 +278,22 @@ function PullRequestRow({ row, first }: { row: PrRow; first: boolean }) {
         <Text style={styles.rowHint}>{describe(row)}</Text>
       </Pressable>
       <View style={styles.actions}>
+        {row.tokens ? <TokenMeter tokens={row.tokens} most={mostTokens} /> : <View style={styles.tokenMeter} />}
         <ReviewerBadge name={row.reviewer} reviewerId={row.reviewerId} />
         <RowActions row={row} />
+      </View>
+    </View>
+  );
+}
+
+// The bar compares the review with the largest one in the same list.
+function TokenMeter({ tokens, most }: { tokens: number; most: number }) {
+  const { styles } = useScreen();
+  return (
+    <View style={styles.tokenMeter} accessibilityLabel={`${formatTokens(tokens)} tokens`}>
+      <Text style={styles.tokenText}>{formatTokens(tokens)}</Text>
+      <View style={styles.tokenTrack}>
+        <View style={[styles.tokenFill, { width: `${Math.max(4, (tokens / Math.max(most, 1)) * 100)}%` as const }]} />
       </View>
     </View>
   );
@@ -427,6 +442,8 @@ function createStyles(theme: PluginTheme, compact: boolean, twoColumns: boolean)
     badge: {
       flexDirection: "row" as const,
       alignItems: "center" as const,
+      justifyContent: "center" as const,
+      minWidth: 88,
       gap: 4,
       paddingHorizontal: 8,
       paddingVertical: 2,
@@ -435,6 +452,10 @@ function createStyles(theme: PluginTheme, compact: boolean, twoColumns: boolean)
       borderWidth: 1,
     },
     badgeText: { fontSize: 12 },
+    tokenMeter: { width: 56, gap: 3, marginRight: 12, alignItems: "flex-end" as const },
+    tokenText: { color: colors.foregroundMuted, fontSize: 12, fontVariant: ["tabular-nums" as const] },
+    tokenTrack: { width: "100%" as const, height: 4, borderRadius: 2, backgroundColor: colors.border, overflow: "hidden" as const },
+    tokenFill: { height: "100%" as const, borderRadius: 2, backgroundColor: colors.accent },
     status: {
       flexDirection: "row" as const,
       alignItems: "flex-start" as const,
