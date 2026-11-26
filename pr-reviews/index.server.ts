@@ -1,12 +1,13 @@
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
 import { checkNowRpc, dashboardRpc, dismissRpc, restoreAgentRpc, reviewNowRpc } from "./shared/dashboard";
-import { reviewSettings } from "./shared/settings";
+import { reviewSettings, settingsBackupRpc } from "./shared/settings";
 import { Attention } from "./server/attention";
 import { Daemon } from "./server/daemon";
 import { buildDashboard } from "./server/dashboard";
 import { GitHub } from "./server/github";
 import { ReviewRunner } from "./server/review-runner";
 import { ReviewStore } from "./server/review-store";
+import { SettingsBackup } from "./server/settings-backup";
 import { UsageGuard } from "./server/usage-guard";
 import { Watcher } from "./server/watcher";
 
@@ -38,9 +39,14 @@ export default function contribute(server: PluginServerContext) {
     return {};
   });
 
+  const backup = new SettingsBackup();
+  server.handle(settingsBackupRpc, () => ({ backup: backup.load() }));
+
   const settings = server.registerSettings(reviewSettings);
   const applySettings = (state: PluginSettingsState<typeof reviewSettings.schema>) => {
-    if (state.status === "ready") watcher.configure(state.values);
+    if (state.status !== "ready") return;
+    watcher.configure(state.values);
+    backup.save(state.values);
   };
   void settings.read().then(applySettings, () => undefined);
   const unsubscribe = settings.subscribe(applySettings);

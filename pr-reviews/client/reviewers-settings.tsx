@@ -2,6 +2,7 @@ import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { Loading, SettingsCard, SettingsRow, SettingsSection, SettingsSelect, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { Button } from "./button";
 import { summarize } from "./labels";
+import { RestoreBackupRow } from "./restore-backup-row";
 import { useReviewerManager } from "./use-reviewer-manager";
 
 const POLL_OPTIONS = [2, 5, 10, 15, 30, 60].map((minutes) => ({ value: String(minutes), label: `${minutes} min` }));
@@ -63,7 +64,10 @@ export function ReviewersSettings({ theme }: PluginSurfaceProps) {
       <SettingsSection title="Reviewers" trailing={<Button theme={theme} label="Add reviewer" onPress={manager.addReviewer} />}>
         <SettingsCard>
           {values.reviewers.length === 0 && (
-            <SettingsRow label="No reviewers" hint="Add a reviewer to start automatic reviews." />
+            <>
+              <SettingsRow label="No reviewers" hint="Add a reviewer to start automatic reviews." />
+              <RestoreBackupRow theme={theme} onRestore={(backup) => void manager.save(backup)} />
+            </>
           )}
           {values.reviewers.map((reviewer) => (
             <SettingsRow

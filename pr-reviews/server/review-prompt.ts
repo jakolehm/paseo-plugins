@@ -1,5 +1,6 @@
 import type { ApprovalPolicy, Reviewer } from "../shared/settings";
 import type { ReviewRecord } from "./review-store";
+import { isSandboxed } from "./sandbox";
 
 const BASE_RULES = `You review GitHub pull requests for me. You post with my GitHub account through \`gh\`. Work without asking me. Do not stop for questions.
 
@@ -60,11 +61,16 @@ Before you post, get a second review from Codex.
   Inline comments from \`gh api repos/<repo>/pulls/<n>/comments\` and non-empty review bodies from \`gh api repos/<repo>/pulls/<n>/reviews\`, one line each: author, path:line, body
   </review_comments>
   \`\`\`
-- Run \`codex review - < .pr-review/codex-prompt.md\` in the current directory. Run it in the foreground, as this one command, without \`cd\` and without output redirects.
+- Run \`cat .pr-review/codex-prompt.md | codex review -\` in the current directory. Run it in the foreground, as this one command, without \`cd\` and without redirects.
 - \`<base>\` is the merge base with the PR base branch. On a re-review, it is the commit of my latest review.
 - Do not use \`--base\`. It cannot be used with a prompt. Do not give Codex only the PR number: its sandbox has no network, so it cannot run \`gh\`. Do not turn on network for Codex.
 - Codex findings are not facts. Read the code and check each one. Keep only the findings you agree with, and post them as your own findings. Do not say that they come from Codex.
 - If Codex fails, continue without it, and say so in the result reason.`;
+
+const SANDBOX = `## Sandbox
+Shell commands run in a sandbox without network. To read web pages, use WebFetch and WebSearch.
+- \`gh\` and \`codex\` run outside the sandbox only as one plain command: no \`;\`, \`&&\`, redirects, or pipes. The Codex command in "Second opinion" is the one exception. Filter \`gh\` output with \`--jq\`. To keep it in a file, write the file with the Write tool.
+- A sandboxed command cannot see processes that it did not start. Do not use \`pgrep\` or \`ps\` to wait for Codex. Run Codex in the foreground.`;
 
 const OUTPUT = `## Result
 When you are done, your final message has two parts:
@@ -80,6 +86,7 @@ When you are done, your final message has two parts:
 export function systemPrompt(reviewer: Reviewer) {
   const parts = [BASE_RULES, APPROVAL_RULES[reviewer.approval]];
   if (reviewer.secondOpinion) parts.push(SECOND_OPINION);
+  if (isSandboxed(reviewer)) parts.push(SANDBOX);
   if (reviewer.focus.trim()) parts.push(`## Your focus as ${reviewer.name}\n${reviewer.focus.trim()}`);
   parts.push(OUTPUT);
   return parts.join("\n\n");
@@ -94,7 +101,7 @@ function scope(record: ReviewRecord) {
 export function followUpPrompt(record: ReviewRecord) {
   return [
     `Review ${record.repo}#${record.number} again. Why now: ${record.reason}.`,
-    `First move this worktree to the PR head commit ${record.head}: run \`git fetch origin pull/${record.number}/head\`, then \`git checkout --detach ${record.head}\`. Do not merge or rebase.`,
+    `This worktree is now on the PR head commit ${record.head}.`,
     scope(record),
     "Use what you know from your earlier rounds, but read the changed code again. Follow the same rules and give the result in the same format.",
   ].join("\n");

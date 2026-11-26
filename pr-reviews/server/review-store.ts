@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { pluginDataFile } from "./plugin-data";
 import type { HandledReview } from "./selection";
 import type { ReviewOutcome } from "./review-outcome";
 
@@ -47,7 +47,7 @@ export class ReviewStore {
   private loaded: State;
   private loadedMtime = -1;
 
-  constructor(file = defaultStateFile()) {
+  constructor(file = pluginDataFile("state.json")) {
     this.file = file;
     this.loaded = load(file);
     this.loadedMtime = mtime(file);
@@ -123,9 +123,4 @@ function mtime(file: string) {
   } catch {
     return -1;
   }
-}
-
-function defaultStateFile() {
-  const home = process.env.PASEO_HOME ?? join(homedir(), ".paseo");
-  return join(home, "plugin-data", "pr-reviews", "state.json");
 }

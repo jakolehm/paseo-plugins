@@ -169,6 +169,14 @@ function AgentSection({ draft, onChange }: { draft: Reviewer; onChange(changes: 
           options={[DEFAULT_CHOICE, ...(provider?.modes ?? []).map(({ id, label }) => ({ value: id, label }))]}
           onValueChange={(modeId) => onChange({ modeId })}
         />
+        {draft.provider === "claude" && (
+          <SettingsSwitch
+            label="Sandbox"
+            hint="Shell commands run without network and need no permission. The agent reads the web with WebFetch. On Linux, install bubblewrap and socat."
+            value={draft.sandbox}
+            onValueChange={(sandbox) => onChange({ sandbox })}
+          />
+        )}
       </SettingsCard>
     </SettingsSection>
   );

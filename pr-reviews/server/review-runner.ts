@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { PaseoApi } from "@getpaseo/client";
+import { execCommand } from "@getpaseo/plugin/server";
 import type { Reviewer } from "../shared/settings";
 import type { Daemon } from "./daemon";
 import type { GitHub } from "./github";
@@ -7,6 +8,7 @@ import { prKey, type PullRequest } from "./pull-request";
 import { parseOutcome, reviewOutcomeJsonSchema } from "./review-outcome";
 import { followUpPrompt, reviewPrompt, systemPrompt } from "./review-prompt";
 import type { ReviewRecord, ReviewStore } from "./review-store";
+import { sandboxOptions } from "./sandbox";
 import { ZEROSUB_ACCOUNT_KEY } from "./zerosub";
 
 const WAIT_STEP_MS = 10 * 60_000;
@@ -200,6 +202,7 @@ export class ReviewRunner {
           provider: await agentModel(paseo, reviewer),
           ...(reviewer.modeId ? { modeId: reviewer.modeId } : {}),
           systemPrompt: systemPrompt(reviewer),
+          ...sandboxOptions(reviewer),
         },
         title: `${reviewer.name}: ${record.repo}#${record.number}`,
         prompt: reviewPrompt(record),
@@ -240,7 +243,8 @@ export class ReviewRunner {
         await this.restore(previous.agentId!);
         snapshot = await this.idleAfterRestore(agent);
       }
-      if (!snapshot || snapshot.archivedAt || snapshot.status !== "idle") return null;
+      if (!snapshot || snapshot.archivedAt || snapshot.status !== "idle" || !snapshot.cwd) return null;
+      await moveToHead(snapshot.cwd, record);
       await agent.run(followUpPrompt(record), { timeoutMs: SEND_WAIT_MS });
       return { agentId: previous.agentId!, round: (previous.round ?? 1) + 1 };
     } catch {
@@ -312,9 +316,15 @@ function message(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function agentConfig({ name, provider, model, modeId, focus, approval, secondOpinion }: Reviewer) {
-  const settings = JSON.stringify({ name, provider, model, modeId, focus, approval, secondOpinion });
+function agentConfig({ name, provider, model, modeId, focus, approval, secondOpinion, sandbox }: Reviewer) {
+  const settings = JSON.stringify({ name, provider, model, modeId, focus, approval, secondOpinion, sandbox });
   return createHash("sha256").update(settings).digest("hex").slice(0, 16);
+}
+
+// The plugin fetches for the agent, so the agent needs no network.
+async function moveToHead(cwd: string, record: ReviewRecord) {
+  await execCommand("git", ["fetch", "origin", `pull/${record.number}/head`], { cwd, timeout: 120_000 });
+  await execCommand("git", ["checkout", "--detach", record.head], { cwd, timeout: 60_000 });
 }
 
 async function agentModel(paseo: PaseoApi, reviewer: Reviewer) {

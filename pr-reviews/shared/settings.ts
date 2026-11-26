@@ -1,4 +1,4 @@
-import { defineSettings } from "@getpaseo/plugin";
+import { defineRpc, defineSettings } from "@getpaseo/plugin";
 import { z } from "zod";
 
 const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/;
@@ -27,6 +27,7 @@ const reviewerSchema = z.object({
   maxAgeDays: z.number().int().min(0).max(365).default(0),
   approval: z.enum(approvalPolicies).default("when-no-findings"),
   secondOpinion: z.boolean().default(true),
+  sandbox: z.boolean().default(true),
 });
 
 export type Reviewer = z.infer<typeof reviewerSchema>;
@@ -48,6 +49,12 @@ export const reviewSettings = defineSettings({
 });
 
 export type ReviewSettings = z.infer<typeof reviewSettings.schema>;
+
+export const settingsBackupRpc = defineRpc({
+  name: "settings.backup",
+  input: z.object({}),
+  output: z.object({ backup: reviewSettings.schema.nullable() }),
+});
 
 function hasUniqueRepos({ reviewers }: { reviewers: Reviewer[] }) {
   const repos = reviewers.flatMap((reviewer) => reviewer.repos.map((repo) => repo.toLowerCase()));
