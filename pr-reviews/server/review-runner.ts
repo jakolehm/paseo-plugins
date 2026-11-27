@@ -5,22 +5,24 @@ import type { SandboxStatus } from "../shared/sandbox";
 import type { Reviewer } from "../shared/settings";
 import type { Daemon } from "./daemon";
 import type { GitHub } from "./github";
+import { MissingResult } from "./missing-result";
 import { prKey, type PullRequest } from "./pull-request";
 import { parseOutcome, reviewOutcomeJsonSchema } from "./review-outcome";
 import { followUpPrompt, reviewPrompt, systemPrompt } from "./review-prompt";
-import type { ReviewRecord, ReviewStore } from "./review-store";
+import { ACTIVE_STATUSES, type ReviewRecord, type ReviewStore } from "./review-store";
 import { sandboxOptions } from "./sandbox";
 import { ZEROSUB_ACCOUNT_KEY } from "./zerosub";
 
 const WAIT_STEP_MS = 10 * 60_000;
 const AGENT_DEADLINE_MS = 4 * 60 * 60_000;
 const RESUME_RETRY_MS = 30_000;
-const ACTIVE = new Set(["queued", "running", "permission"]);
 const MAX_ROUNDS = 3;
 const SEND_WAIT_MS = 5_000;
 const RESTORE_WAIT_MS = 30_000;
 const RESTORE_POLL_MS = 1_000;
 const PERMISSION_POLL_MS = 30_000;
+const RESULT_GRACE_MS = 20 * 60_000;
+const RESULT_POLL_MS = 30_000;
 
 interface Job {
   recordId: string;
@@ -49,7 +51,7 @@ export class ReviewRunner {
   }
 
   isActive(key: string) {
-    return this.store.records().some((record) => record.key === key && ACTIVE.has(record.status));
+    return this.store.records().some((record) => record.key === key && ACTIVE_STATUSES.has(record.status));
   }
 
   // The account is a ZeroSub account with room for a new agent, or null to let ZeroSub or the CLI login decide.
@@ -82,7 +84,7 @@ export class ReviewRunner {
   }
 
   // Takes the active records once, before this instance queues its own reviews.
-  async resume(ids = this.store.records().filter((record) => ACTIVE.has(record.status)).map((record) => record.id)) {
+  async resume(ids = this.store.records().filter((record) => ACTIVE_STATUSES.has(record.status)).map((record) => record.id)) {
     if (this.disposed) return;
     try {
       await this.daemon.api();
@@ -91,7 +93,7 @@ export class ReviewRunner {
       return;
     }
     for (const record of this.store.records()) {
-      if (!ids.includes(record.id) || !ACTIVE.has(record.status)) continue;
+      if (!ids.includes(record.id) || !ACTIVE_STATUSES.has(record.status)) continue;
       if (record.agentId) {
         this.running++;
         void this.follow(record.id, record.agentId);
@@ -106,7 +108,7 @@ export class ReviewRunner {
     const lower = repo.toLowerCase();
     const records = this.store
       .records()
-      .filter((record) => record.repo.toLowerCase() === lower && ACTIVE.has(record.status) && !openKeys.has(record.key));
+      .filter((record) => record.repo.toLowerCase() === lower && ACTIVE_STATUSES.has(record.status) && !openKeys.has(record.key));
     for (const record of records) {
       const queued = this.pending.findIndex((job) => job.recordId === record.id);
       if (queued >= 0) this.pending.splice(queued, 1);
@@ -120,7 +122,7 @@ export class ReviewRunner {
   async archiveStale(repo: string, openKeys: Set<string>, archiveAfterMs: number) {
     const lower = repo.toLowerCase();
     const records = this.store.records().filter((record) => record.repo.toLowerCase() === lower && record.agentId);
-    const busy = new Set(records.filter((record) => ACTIVE.has(record.status)).map((record) => record.agentId));
+    const busy = new Set(records.filter((record) => ACTIVE_STATUSES.has(record.status)).map((record) => record.agentId));
     const now = Date.now();
     const stale = new Set(
       records
@@ -138,9 +140,11 @@ export class ReviewRunner {
     for (const agentId of stale) {
       try {
         const agent = paseo.agents.ref(agentId);
-        const workspaceId = (await agent.refresh())?.agent.workspaceId;
+        const snapshot = await agent.refresh();
+        const workspaceId = snapshot?.agent.workspaceId;
+        // A deleted agent has nothing left to archive.
         if (workspaceId) await paseo.workspaces.archive(workspaceId);
-        else await agent.archive();
+        else if (snapshot) await agent.archive();
         for (const record of records.filter((candidate) => candidate.agentId === agentId)) {
           this.store.update(record.id, { archived: true });
         }
@@ -269,6 +273,7 @@ export class ReviewRunner {
   private async follow(recordId: string, agentId: string) {
     const deadline = Date.now() + AGENT_DEADLINE_MS;
     let holdsSlot = true;
+    const missingResult = new MissingResult(RESULT_GRACE_MS);
     try {
       const agent = (await this.daemon.api()).agents.ref(agentId);
       while (!this.disposed && Date.now() < deadline) {
@@ -286,7 +291,11 @@ export class ReviewRunner {
         }
         if (result.status === "error") return this.fail(recordId, result.error ?? "The agent failed");
         const outcome = parseOutcome(result.lastMessage);
-        if (!outcome) return this.fail(recordId, "The agent did not return a review result");
+        if (!outcome) {
+          if (missingResult.expired()) return this.fail(recordId, "The agent did not return a review result");
+          await sleep(RESULT_POLL_MS);
+          continue;
+        }
         // The tokens are extra data. A failed read must not fail a finished review.
         const snapshot = await agent.refresh().catch(() => null);
         const tokens = tokenCount(snapshot?.agent?.lastUsage);
@@ -302,7 +311,7 @@ export class ReviewRunner {
 
   private stillActive(recordId: string) {
     const status = this.store.records().find((record) => record.id === recordId)?.status;
-    return status !== undefined && ACTIVE.has(status);
+    return status !== undefined && ACTIVE_STATUSES.has(status);
   }
 
   private fail(recordId: string, error: string) {

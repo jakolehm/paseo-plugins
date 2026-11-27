@@ -1,12 +1,15 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { pluginDataFile } from "./plugin-data";
+import { pluginDataFile } from "./plugin-data.ts";
 import type { HandledReview } from "./selection";
 import type { ReviewOutcome } from "./review-outcome";
 
-const MAX_RECORDS = 300;
+const KEEP_MS = 48 * 60 * 60_000;
+const MAX_RECORDS = 5_000;
 
 type ReviewStatus = "queued" | "running" | "permission" | "done" | "failed";
+
+export const ACTIVE_STATUSES: ReadonlySet<string> = new Set<ReviewStatus>(["queued", "running", "permission"]);
 
 export interface ReviewRecord {
   id: string;
@@ -78,8 +81,8 @@ export class ReviewStore {
     return this.state.dismissed.includes(id);
   }
 
-  add(record: ReviewRecord) {
-    this.state.records = [record, ...this.state.records].slice(0, MAX_RECORDS);
+  add(record: ReviewRecord, now = Date.now()) {
+    this.state.records = [record, ...this.state.records].filter((candidate) => isKept(candidate, now)).slice(0, MAX_RECORDS);
     this.save();
   }
 
@@ -107,6 +110,13 @@ export class ReviewStore {
     renameSync(temp, this.file);
     this.loadedMtime = mtime(this.file);
   }
+}
+
+// A record stays while its review runs or its workspace is not archived, so that a later check can still archive it.
+function isKept(record: ReviewRecord, now: number) {
+  if (ACTIVE_STATUSES.has(record.status)) return true;
+  if (record.agentId && !record.archived) return true;
+  return now - Date.parse(record.queuedAt) < KEEP_MS;
 }
 
 function load(file: string): State {

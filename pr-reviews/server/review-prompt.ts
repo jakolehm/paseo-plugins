@@ -61,7 +61,7 @@ Before you post, get a second review from Codex.
   Inline comments from \`gh api repos/<repo>/pulls/<n>/comments\` and non-empty review bodies from \`gh api repos/<repo>/pulls/<n>/reviews\`, one line each: author, path:line, body
   </review_comments>
   \`\`\`
-- Run \`cat .pr-review/codex-prompt.md | codex review -\` in the current directory. Run it in the foreground, as this one command, without \`cd\` and without redirects.
+- Run \`cat .pr-review/codex-prompt.md | codex review -\` in the current directory. Run it in the foreground, as this one command, without \`cd\` and without redirects. Do not use \`run_in_background\`.
 - \`<base>\` is the merge base with the PR base branch. On a re-review, it is the commit of my latest review.
 - Do not use \`--base\`. It cannot be used with a prompt. Do not give Codex only the PR number: its sandbox has no network, so it cannot run \`gh\`. Do not turn on network for Codex.
 - Codex findings are not facts. Read the code and check each one. Keep only the findings you agree with, and post them as your own findings. Do not say that they come from Codex.
