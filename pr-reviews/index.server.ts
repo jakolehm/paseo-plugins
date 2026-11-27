@@ -1,5 +1,6 @@
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
 import { checkNowRpc, dashboardRpc, dismissRpc, restoreAgentRpc, reviewNowRpc } from "./shared/dashboard";
+import { sandboxStatusRpc } from "./shared/sandbox";
 import { reviewSettings, settingsBackupRpc } from "./shared/settings";
 import { Attention } from "./server/attention";
 import { Daemon } from "./server/daemon";
@@ -7,6 +8,7 @@ import { buildDashboard } from "./server/dashboard";
 import { GitHub } from "./server/github";
 import { ReviewRunner } from "./server/review-runner";
 import { ReviewStore } from "./server/review-store";
+import { probeSandbox } from "./server/sandbox-probe";
 import { SettingsBackup } from "./server/settings-backup";
 import { UsageGuard } from "./server/usage-guard";
 import { Watcher } from "./server/watcher";
@@ -15,11 +17,13 @@ export default function contribute(server: PluginServerContext) {
   const github = new GitHub();
   const daemon = new Daemon();
   const store = new ReviewStore();
-  const runner = new ReviewRunner(daemon, store, github);
+  const sandboxStatus = probeSandbox();
+  const runner = new ReviewRunner(daemon, store, github, sandboxStatus);
   const attention = new Attention();
   const watcher = new Watcher(github, daemon, store, runner, attention, new UsageGuard(daemon));
   void runner.resume();
 
+  server.handle(sandboxStatusRpc, () => sandboxStatus);
   server.handle(dashboardRpc, () => buildDashboard(store, watcher, attention));
   server.handle(checkNowRpc, () => {
     watcher.runNow();

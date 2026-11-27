@@ -15,6 +15,7 @@ import { Button } from "./button";
 import { ColorPicker } from "./color-picker";
 import { APPROVAL_LABELS, BOT_LABELS, SELECTION_LABELS, selectOptions } from "./labels";
 import { RepoPicker } from "./repo-picker";
+import { SandboxSwitch } from "./sandbox-switch";
 import { useAgentProviders } from "./use-host-options";
 
 const MAX_AGE_OPTIONS = [0, 7, 14, 30, 60, 90].map((days) => ({ value: String(days), label: days === 0 ? "No limit" : `${days} days` }));
@@ -170,12 +171,7 @@ function AgentSection({ draft, onChange }: { draft: Reviewer; onChange(changes: 
           onValueChange={(modeId) => onChange({ modeId })}
         />
         {draft.provider === "claude" && (
-          <SettingsSwitch
-            label="Sandbox"
-            hint="Shell commands run without network and need no permission. The agent reads the web with WebFetch. On Linux, install bubblewrap and socat."
-            value={draft.sandbox}
-            onValueChange={(sandbox) => onChange({ sandbox })}
-          />
+          <SandboxSwitch value={draft.sandbox} onValueChange={(sandbox) => onChange({ sandbox })} />
         )}
       </SettingsCard>
     </SettingsSection>

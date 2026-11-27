@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { PaseoApi } from "@getpaseo/client";
 import { execCommand } from "@getpaseo/plugin/server";
+import type { SandboxStatus } from "../shared/sandbox";
 import type { Reviewer } from "../shared/settings";
 import type { Daemon } from "./daemon";
 import type { GitHub } from "./github";
@@ -39,6 +40,7 @@ export class ReviewRunner {
     private readonly daemon: Daemon,
     private readonly store: ReviewStore,
     private readonly github: GitHub,
+    private readonly sandboxStatus: Promise<SandboxStatus>,
   ) {}
 
   setMaxParallel(maxParallel: number) {
@@ -194,6 +196,7 @@ export class ReviewRunner {
         this.store.update(record.id, { status: "running", agentId, round: continued.round });
         return await this.follow(record.id, agentId);
       }
+      const sandbox = sandboxOptions(reviewer, await this.sandboxStatus);
       const create = async () => paseo.agents.create({
         idempotencyKey: record.id,
         cwd: checkout,
@@ -202,7 +205,7 @@ export class ReviewRunner {
           provider: await agentModel(paseo, reviewer),
           ...(reviewer.modeId ? { modeId: reviewer.modeId } : {}),
           systemPrompt: systemPrompt(reviewer),
-          ...sandboxOptions(reviewer),
+          ...sandbox,
         },
         title: `${reviewer.name}: ${record.repo}#${record.number}`,
         prompt: reviewPrompt(record),
