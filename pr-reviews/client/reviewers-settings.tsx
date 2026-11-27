@@ -58,6 +58,12 @@ export function ReviewersSettings({ theme }: PluginSurfaceProps) {
             value={values.usagePacing}
             onValueChange={(usagePacing) => void manager.save({ ...values, usagePacing })}
           />
+          <SettingsSwitch
+            label="Hide review agents"
+            hint="New review agents and their workspaces do not show in the sidebar or send notifications. Open them from the Reviews page."
+            value={values.hideAgents}
+            onValueChange={(hideAgents) => void manager.save({ ...values, hideAgents })}
+          />
         </SettingsCard>
       </SettingsSection>
 

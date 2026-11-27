@@ -55,7 +55,7 @@ export class Watcher {
   // Saves come in bursts. One check after the last save is enough, and a rate limit back-off stays.
   configure(settings: ReviewSettings) {
     this.settings = settings;
-    this.runner.setMaxParallel(settings.maxParallelReviews);
+    this.runner.configure(settings);
     void this.refreshCheckouts();
     if (this.backoffMs === 0) this.schedule(SETTLE_MS);
   }

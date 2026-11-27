@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { PaseoApi } from "@getpaseo/client";
 import { execCommand } from "@getpaseo/plugin/server";
 import type { SandboxStatus } from "../shared/sandbox";
-import type { Reviewer } from "../shared/settings";
+import type { Reviewer, ReviewSettings } from "../shared/settings";
 import type { Daemon } from "./daemon";
 import type { GitHub } from "./github";
 import { MissingResult } from "./missing-result";
@@ -37,6 +37,7 @@ export class ReviewRunner {
   // Two PR checkouts in one repo at the same time race on .git/config.
   private readonly checkoutQueues = new Map<string, Promise<unknown>>();
   private maxParallel = 2;
+  private hideAgents = true;
   private disposed = false;
 
   constructor(
@@ -47,8 +48,9 @@ export class ReviewRunner {
     private readonly history: QualityHistory,
   ) {}
 
-  setMaxParallel(maxParallel: number) {
-    this.maxParallel = maxParallel;
+  configure({ maxParallelReviews, hideAgents }: ReviewSettings) {
+    this.maxParallel = maxParallelReviews;
+    this.hideAgents = hideAgents;
     this.pump();
   }
 
@@ -214,6 +216,7 @@ export class ReviewRunner {
           ...sandbox,
         },
         title: `${reviewer.name}: ${record.repo}#${record.number}`,
+        background: this.hideAgents,
         prompt: reviewPrompt(record),
         outputSchema: reviewOutcomeJsonSchema,
         labels: { "pr-reviews": reviewer.id },

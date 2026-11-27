@@ -42,6 +42,7 @@ export const reviewSettings = defineSettings({
       maxParallelReviews: z.number().int().min(1).max(8).default(2),
       usageLimitPct: z.number().int().min(10).max(100).default(80),
       usagePacing: z.boolean().default(true),
+      hideAgents: z.boolean().default(true),
       archiveAfterMinutes: z.number().int().min(0).max(1440).default(60),
       reviewers: z.array(reviewerSchema).default([]),
     })
