@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { formatTokens } from "../shared/tokens";
-import { checkNowRpc, dismissRpc, restoreAgentRpc, type Dashboard, type PrRow, type ReviewerStatus } from "../shared/dashboard";
+import { checkNowRpc, dismissRpc, restoreAgentRpc, type Dashboard, type PrRow, type QualityCounts, type ReviewerStatus } from "../shared/dashboard";
 import { Button } from "./button";
 import { NextCheck } from "./next-check";
 import { ReviewNowDialog, type PrRef } from "./review-now-dialog";
@@ -77,6 +77,7 @@ export function ReviewsScreen({ theme, layout, navigation }: PluginScreenProps) 
             />
             {dashboard.error && <Text style={value.styles.error}>GitHub sync failed: {dashboard.error}</Text>}
             <RecentStats stats={dashboard.recentStats} />
+            <ReviewQuality quality={dashboard.quality} />
             {twoColumns && <Reviewers reviewers={dashboard.reviewers} manager={manager} />}
           </View>
           <View style={value.styles.main}>
@@ -174,12 +175,17 @@ function RecentStats({ stats }: { stats: Dashboard["recentStats"] }) {
   return (
     <View style={styles.stats}>
       <Text style={styles.statusText}>Last 24 hours</Text>
-      <HourlyChart title="Reviews" summary={totals.join(" · ")} values={stats.hourly} format={(value) => count(value, "review")} />
-      <HourlyChart
+      <BarChart
+        title="Reviews"
+        summary={totals.join(" · ")}
+        values={stats.hourly}
+        describe={(index) => `${hourLabel(stats.hourly.length - 1 - index)}: ${count(stats.hourly[index], "review")}`}
+      />
+      <BarChart
         title="Tokens"
         summary={`${formatTokens(stats.tokens)} tokens`}
         values={stats.hourlyTokens}
-        format={(value) => `${formatTokens(value)} tokens`}
+        describe={(index) => `${hourLabel(stats.hourlyTokens.length - 1 - index)}: ${formatTokens(stats.hourlyTokens[index])} tokens`}
       />
       <View style={styles.chartAxis}>
         <Text style={styles.statusHint}>24 h ago</Text>
@@ -189,20 +195,110 @@ function RecentStats({ stats }: { stats: Dashboard["recentStats"] }) {
   );
 }
 
-// One bar for each hour, oldest at the left. Hovering a bar shows its hour instead of the summary.
-function HourlyChart({ title, summary, values, format }: { title: string; summary: string; values: number[]; format: (value: number) => string }) {
+const RELIABLE_FIRST_REVIEWS = 5;
+
+function findingsPerPr({ findings, firstReviews }: QualityCounts) {
+  return findings / firstReviews;
+}
+
+function percent(value: number, total: number) {
+  return `${Math.round((100 * value) / total)}%`;
+}
+
+// Only a first review sees the whole PR, so only first reviews compare PRs with each other.
+function ReviewQuality({ quality }: { quality: Dashboard["quality"] }) {
+  const { styles } = useScreen();
+  const { total, repos } = quality;
+  if (total.firstReviews === 0) return null;
+  const worst = Math.max(...repos.map(findingsPerPr));
+  return (
+    <View style={styles.stats}>
+      <Text style={styles.statusText}>PR quality · first reviews</Text>
+      <Text style={styles.statusHint}>Last 24 hours</Text>
+      <View style={styles.qualityHeadline}>
+        <Text style={styles.qualityNumber}>{findingsPerPr(total).toFixed(1)}</Text>
+        <Text style={styles.statusHint}>findings per PR (lower is better)</Text>
+      </View>
+      <Text style={styles.statusHint}>
+        {percent(total.approved, total.firstReviews)} approved at once · {percent(total.clean, total.firstReviews)} with no findings · {count(total.firstReviews, "PR")}
+      </Text>
+      {total.firstReviews < RELIABLE_FIRST_REVIEWS && <Text style={styles.statusHint}>Too few PRs for a reliable number.</Text>}
+      <DailyQuality daily={quality.daily} />
+      {repos.length > 1 && (
+        <View style={styles.chartBlock}>
+          <Text style={styles.statusHint}>Findings per PR, by repo</Text>
+          {repos.map((repo) => (
+            <View key={repo.repo} style={styles.qualityRow}>
+              <Text style={styles.qualityRepo} numberOfLines={1}>
+                {repo.repo.split("/")[1]}
+              </Text>
+              <View style={styles.qualityTrack}>
+                <View style={[styles.qualityBar, { width: `${worst > 0 ? (findingsPerPr(repo) / worst) * 100 : 0}%` as const }]} />
+              </View>
+              <Text style={styles.qualityValue}>
+                {findingsPerPr(repo).toFixed(1)} · {count(repo.firstReviews, "PR")}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function hourLabel(hoursAgo: number) {
+  return hoursAgo === 0 ? "Last hour" : `${hoursAgo} h ago`;
+}
+
+function DailyQuality({ daily }: { daily: Dashboard["quality"]["daily"] }) {
+  const { styles } = useScreen();
+  const describe = (index: number) => {
+    const day = daily[index];
+    if (day.firstReviews === 0) return `${day.date}: no first reviews`;
+    return `${day.date}: ${findingsPerPr(day).toFixed(1)} findings per PR · ${count(day.firstReviews, "PR")} · ${percent(day.approved, day.firstReviews)} approved at once`;
+  };
+  const values = daily.map((day) => (day.firstReviews > 0 ? findingsPerPr(day) : 0));
+  return (
+    <>
+      <BarChart
+        title="Each day (UTC)"
+        summary={`max ${Math.max(...values).toFixed(1)} · pale = fewer than ${RELIABLE_FIRST_REVIEWS} PRs`}
+        values={values}
+        describe={describe}
+        faded={(index) => daily[index].firstReviews < RELIABLE_FIRST_REVIEWS}
+      />
+      <View style={styles.chartAxis}>
+        <Text style={styles.statusHint}>{daily[0].date}</Text>
+        <Text style={styles.statusHint}>Today</Text>
+      </View>
+    </>
+  );
+}
+
+// One bar for each value, oldest at the left. Hovering a bar shows its description instead of the summary.
+function BarChart({
+  title,
+  summary,
+  values,
+  describe,
+  faded = () => false,
+}: {
+  title: string;
+  summary: string;
+  values: number[];
+  describe: (index: number) => string;
+  faded?: (index: number) => boolean;
+}) {
   const { styles } = useScreen();
   const [hovered, setHovered] = useState<number | null>(null);
   const highest = Math.max(1, ...values);
-  const hoursAgo = (index: number) => values.length - 1 - index;
-  const label =
-    hovered === null ? summary : `${hoursAgo(hovered) === 0 ? "Last hour" : `${hoursAgo(hovered)} h ago`}: ${format(values[hovered])}`;
+  const label = hovered === null ? summary : describe(hovered);
   return (
     <View style={styles.chartBlock}>
       <Text style={styles.statusHint}>
         {title}: {label}
       </Text>
-      <View style={styles.chart} accessibilityLabel={`${title} for each hour, oldest first: ${values.map(format).join(", ")}`}>
+      <View style={styles.chart} accessibilityLabel={`${title}, oldest first: ${values.map((_, index) => describe(index)).join(", ")}`}>
         {values.map((value, index) => (
           <Pressable
             key={index}
@@ -216,6 +312,7 @@ function HourlyChart({ title, summary, values, format }: { title: string; summar
               style={[
                 value > 0 ? styles.chartBar : styles.chartEmpty,
                 value > 0 && { height: `${(value / highest) * 100}%` as const },
+                faded(index) && styles.chartFaded,
                 hovered === index && styles.chartHover,
               ]}
             />
@@ -476,7 +573,15 @@ function createStyles(theme: PluginTheme, compact: boolean, twoColumns: boolean)
     chartBar: { backgroundColor: colors.accent, borderTopLeftRadius: 2, borderTopRightRadius: 2, minHeight: 2 },
     chartEmpty: { backgroundColor: colors.border, height: 1 },
     chartHover: { opacity: 0.6 },
+    chartFaded: { opacity: 0.35 },
     chartAxis: { flexDirection: "row" as const, justifyContent: "space-between" as const },
+    qualityHeadline: { flexDirection: "row" as const, alignItems: "baseline" as const, gap: 8 },
+    qualityNumber: { color: colors.foreground, fontSize: 28, fontWeight: "600" as const },
+    qualityRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
+    qualityRepo: { color: colors.foregroundMuted, fontSize: 12, width: 120 },
+    qualityTrack: { flex: 1, height: 4, borderRadius: 2, backgroundColor: colors.border },
+    qualityBar: { height: 4, borderRadius: 2, backgroundColor: colors.accent },
+    qualityValue: { color: colors.foregroundMuted, fontSize: 12, width: 80, textAlign: "right" as const },
     iconButton: { padding: 6, borderRadius: 6 },
     iconButtonPressed: { backgroundColor: colors.surface2 },
   };

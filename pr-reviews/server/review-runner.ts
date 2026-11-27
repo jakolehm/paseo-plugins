@@ -6,6 +6,7 @@ import type { Reviewer } from "../shared/settings";
 import type { Daemon } from "./daemon";
 import type { GitHub } from "./github";
 import { MissingResult } from "./missing-result";
+import type { QualityHistory } from "./quality-history";
 import { prKey, type PullRequest } from "./pull-request";
 import { parseOutcome, reviewOutcomeJsonSchema } from "./review-outcome";
 import { followUpPrompt, reviewPrompt, systemPrompt } from "./review-prompt";
@@ -43,6 +44,7 @@ export class ReviewRunner {
     private readonly store: ReviewStore,
     private readonly github: GitHub,
     private readonly sandboxStatus: Promise<SandboxStatus>,
+    private readonly history: QualityHistory,
   ) {}
 
   setMaxParallel(maxParallel: number) {
@@ -299,7 +301,8 @@ export class ReviewRunner {
         // The tokens are extra data. A failed read must not fail a finished review.
         const snapshot = await agent.refresh().catch(() => null);
         const tokens = tokenCount(snapshot?.agent?.lastUsage);
-        return this.store.update(recordId, { status: "done", outcome, tokens, finishedAt: new Date().toISOString() });
+        this.store.update(recordId, { status: "done", outcome, tokens, finishedAt: new Date().toISOString() });
+        return this.history.record(this.store.records());
       }
       if (!this.disposed) this.fail(recordId, "The agent did not finish in 4 hours");
     } catch (error) {

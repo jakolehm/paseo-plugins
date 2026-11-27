@@ -6,6 +6,7 @@ import { Attention } from "./server/attention";
 import { Daemon } from "./server/daemon";
 import { buildDashboard } from "./server/dashboard";
 import { GitHub } from "./server/github";
+import { QualityHistory } from "./server/quality-history";
 import { ReviewRunner } from "./server/review-runner";
 import { ReviewStore } from "./server/review-store";
 import { probeSandbox } from "./server/sandbox-probe";
@@ -18,13 +19,15 @@ export default function contribute(server: PluginServerContext) {
   const daemon = new Daemon();
   const store = new ReviewStore();
   const sandboxStatus = probeSandbox();
-  const runner = new ReviewRunner(daemon, store, github, sandboxStatus);
+  const history = new QualityHistory();
+  history.record(store.records());
+  const runner = new ReviewRunner(daemon, store, github, sandboxStatus, history);
   const attention = new Attention();
   const watcher = new Watcher(github, daemon, store, runner, attention, new UsageGuard(daemon));
   void runner.resume();
 
   server.handle(sandboxStatusRpc, () => sandboxStatus);
-  server.handle(dashboardRpc, () => buildDashboard(store, watcher, attention));
+  server.handle(dashboardRpc, () => buildDashboard(store, watcher, attention, history));
   server.handle(checkNowRpc, () => {
     watcher.runNow();
     return {};

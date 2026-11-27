@@ -43,6 +43,15 @@ const reviewerStatusSchema = z.object({
 
 export type ReviewerStatus = z.infer<typeof reviewerStatusSchema>;
 
+const qualityCountsSchema = z.object({
+  firstReviews: z.number().int(),
+  findings: z.number().int(),
+  approved: z.number().int(),
+  clean: z.number().int(),
+});
+
+export type QualityCounts = z.infer<typeof qualityCountsSchema>;
+
 const dashboardSchema = z.object({
   login: z.string().nullable(),
   syncedAt: z.string().nullable(),
@@ -66,6 +75,11 @@ const dashboardSchema = z.object({
     tokens: z.number().int(),
     hourly: z.array(z.number().int()),
     hourlyTokens: z.array(z.number().int()),
+  }),
+  quality: z.object({
+    total: qualityCountsSchema,
+    repos: z.array(qualityCountsSchema.extend({ repo: z.string() })),
+    daily: z.array(qualityCountsSchema.extend({ date: z.string() })),
   }),
   reviewers: z.array(reviewerStatusSchema),
 });

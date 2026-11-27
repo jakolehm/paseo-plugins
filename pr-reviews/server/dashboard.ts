@@ -1,16 +1,19 @@
 import type { Dashboard, PrRow } from "../shared/dashboard";
 import { type Attention, authorActions } from "./attention";
 import { prStatus } from "./pr-status";
+import type { QualityHistory } from "./quality-history";
+import { reviewQuality } from "./review-quality";
 import { reviewStats } from "./review-stats";
 import { prKey, type PullRequest } from "./pull-request";
 import type { ReviewRecord, ReviewStore } from "./review-store";
 import { MANUAL_REASON, type Watcher } from "./watcher";
 
 const RECENT_MS = 24 * 60 * 60_000;
+const QUALITY_DAYS = 30;
 const STALE_REQUEST_MS = 30 * RECENT_MS;
 const EVENT_LABELS = { APPROVE: "Approved", COMMENT: "Commented", NONE: "No review posted" };
 
-export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: Attention): Dashboard {
+export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: Attention, history: QualityHistory): Dashboard {
   const { snapshot, error } = attention.current();
   const latest = latestPerPullRequest(store.records().filter((record) => !isSuperseded(record, store))).filter(
     (record) => watcher.isOpen(record.repo, record.key) && (record.reason === MANUAL_REASON || watcher.isWatched(record.repo)),
@@ -104,6 +107,7 @@ export function buildDashboard(store: ReviewStore, watcher: Watcher, attention: 
     waitingOnOthers: withStatus(waitingOnOthers),
     recentlyDone: withStatus(recentlyDone),
     recentStats: reviewStats(recent, now),
+    quality: { ...reviewQuality(recent), daily: history.daily(QUALITY_DAYS) },
     reviewers: watcher.status(),
   };
 }
